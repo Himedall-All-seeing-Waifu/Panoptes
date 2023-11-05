@@ -1,0 +1,1539 @@
+#*****************************************************************************************************
+#*                                                                                                   *
+#*                                                                                                   *
+#*                            PANOPTES SOURCE CODE RELEASE V1.0                                      *
+#*                                                                                                   *
+#*                                                                                                   *
+#*****************************************************************************************************
+
+
+
+
+# # Things to Note
+
+
+# # A VALID LOCALS LOGIN IS REQUIRED TO USE THIS LOGGER. YOU NEED TO INPUT THE CREDENTIAL AS A VARIBALE BELOW
+# # UNDER 'LOGIN CREDENTIAL'
+
+
+# # THE TARGET COMMUNITY CAN BE CHANGED BY UPDATING THE URL BELOW FROM THE REKEITA COMMUNITY URL
+
+
+
+# # TRY UPDATING CHROME FIRST BEFORE OTHER DE-BUGGING
+
+
+
+# # CHROMEDRIVER AND BROWSER MUST BE THE MOST UP-TO-DATE VERSION TO RUN. UPDATE CHROME FREQUENTLY. IF PANOPTES CRASHES
+# # TRY UPDATING CHROME FIRST BEFORE OTHER DE-BUGGING
+
+
+# # UUNDETECTED CHROMEDRIVER AND SELENIUM SOMETIMES GET OUT OF STEP WITH UPDATES AND CHANGES TO CHROME AND CHROMEDRIVER. 
+# # FORTUNATELY, THERE IS A FAIRLY ACTIVE COMMUNITY TO SUPPORT, PATCH, AND CREATE FORKS WHERE NEEDED. THIS VERSION OF
+# # CODE WORKS WITH UC V3.5.3 AND SELENIUM V4.12.0. SELNIUMBASE IS A COOL NEW FORK OF UC THAT I HAVE NOT IMPLEMENTED BUT
+# # IT HAS A LOT OF POTENTIAL AND FEATURES FOR DEVELOPMENT
+
+
+# # THIS PROGRAMME REQUIRES MICROSOFT EXCEL INSTALLATION TO WRITE OUT THE LOGS. BEFORE PUBLISHING, SANITISE YOUR METADATA
+
+
+
+# # THE IMPLEMENTATION OF CLOUDFLARE WILL DETECT A FAILED BOT LOGIN AND PREVENT ANY LOGINS FOR ABOUT 5 MINUTES
+# # IF YOU GET A VERIFICATION CHECK, WAIT 5 MINUTES BEFORE TRYING AGAIN AND IT WILL LET YOU LOGIN AGAIN
+
+
+
+# # KILLING THE PROCESS MANUALY WILL TRIGGER A 5 MINUTE LOCK-OUT FROM CLOUDFLARE.
+
+
+
+# # OCCASIONALLY, PANOPTES WILL CRASH AND CHROME PROCESSES WILL NOT CLOSE. KILL IT IN TASK MANAGER BEFORE CPU MELTS
+
+
+# # THE BEST WAY TO ENSURE THE LOGGER RUNS (WITHING CODE IMPROVEMENTS) IS TO USE A REMOTE ACCRESS APP ON YOUR MOBILE TO CHECK
+# # AND RESTART THE LOGGER WHEN IT CRASHES
+
+
+
+# # THE OUTPUT OF THE LOGGER HAS SOME HTML ARTEFACTS, BUT THEY ARE PREDICTABLE AND CAN BE ELIMINATED IN MINUTES WITH 
+# # 'FIND-AND-REPLACE' IN EXCEL OR OTHER CSV EDITOR
+
+
+
+# # THE CURRENT VERSION GRABS THE FIRST (I.E. NEWEST POSTED) CHAT ELEMENT TO OPEN. IF MORE THAN ONE LIVE CHAT POSTS ARE ACTIVE
+# # IT WILL ALWAYS OPEN THE NEWEST. ALSO, IF THERE IS ACTIVITY IN AN OLD CHAT AND THE PROGRAMME IS LOGGING IT, THERE IS NO
+# # TRIGGER TO BREAK OUT AND FIND THE NEW CHAT--OTHER THAN TO STOP THE PORGRAMME AND RESTART IT. KILLING THE PROCESS MANUALY 
+# # WILL TRIGGER A 5 MINUTE LOCK-OUT FROM CLOUDFLARE.
+
+
+#---------------------------------------------------------------------------------------------------
+
+# Import Libraries
+
+#---------------------------------------------------------------------------------------------------
+
+# Selenium used as webdriver
+
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
+
+# Timekeeping nrequired for pseudo-timestamping
+
+import time
+from datetime import datetime
+
+# pandas used to collate data for writing to EXCEL
+
+import pandas as pd
+
+# BeatifulSoup used to process and search HTML hierarchy
+
+from bs4 import BeautifulSoup
+
+# undectected chromdriver used to bypass cloudflare anti-bot protocols
+
+import undetected_chromedriver as uc
+
+
+#---------------------------------------------------------------------------------------------------
+
+# Variable Initialisation
+
+#---------------------------------------------------------------------------------------------------
+
+
+# URL for login page
+url = 'https://rekietalaw.locals.com/login'
+
+#Optimisation of Delays
+
+delay_page_load = 4 #seconds
+delay_retry_action = 5 #seconds
+delay_security_check = 5 #seconds
+
+# Login credentials
+user_login = ######## PUT A VALID LOGIN E-MAIL HERE AS A STRING ########
+user_password = ######## PUT A VALID LOGIN PASSWORD HERE AS A STRING ########
+
+# Class ID for the login page field and button
+username_element_ID = 'username'
+password_element_ID = 'password'
+login_button_ID = 'submit'
+
+
+#XPATH to find the posts that have live chats on them
+XPATH_for_element_with_live_chat = "//div[contains(@class,'post wcontainer')]"
+XPATH_for_live_chat_button_element = '//*[@class="post-bottom"]/div[2]/button'
+
+
+# Attribute for Live Chat post ID
+live_chat_post_ID_attribute = 'data-id'
+
+# Attribute for Live Chat title
+post_name_class = 'title'
+
+
+
+#Placeholder for Live Chat post name to be fed into output file title
+post_name = ''
+
+# Placeholder for live chat post element initialisation
+live_chat_post = [None]
+
+# Placeholder for top message ID to avoid duplication of message scrapes
+current_top_message_ID = ''
+
+last_top_message_ID = ''
+
+#Placeholder for live chat post element. Used also to detect if the live hat has switched posts
+current_locals_post_element = []
+
+current_locals_post_ID = []
+
+last_locals_post_ID = []
+
+
+# Attributes for finding elements in HTMK to pull data
+
+live_chat_post_history_element = 'chat-history'
+
+message_uuid_attribute = 'data-uuid'
+
+user_uuid_attribute = 'data-user-uuid'
+
+message_username_attribute = 'data-username'
+
+message_text_attribute = 'sg-text'
+
+message_attachment_partial_attribute = 'message-attachments message-attachments-'
+
+message_reply_partial_attribue = 'pmessage__con'
+
+message_reply_text_partial_attribute = 'g-text-reply'
+
+message_reply_attachment_partial_attribute = 'pmessage__cont'
+
+messaage_attachment_in_reply_partial_attribute = 'message__replyto'
+
+
+# Used to refine and discriminate between identically named classes in HTML tree
+
+sibling_attribute_for_reply_message_attachments = 'pmessage__replytext'
+
+sibling_attribute_for_non_reply_message_attachments ='pmessage__text'
+
+
+
+
+# Data storage arrays for output
+message_ID_array = [0]
+username_array = []
+message_text_array = []
+reply_username_array = []
+reply_message_text_array = []
+attachment_url_array = []
+reply_attachment_url_array = []
+user_ID_array = []
+
+
+output_array = []
+
+last_message_ID_array = ['Filler']
+
+start_excel_idx = 0
+
+end_excel_idx = 0
+
+chat_user_count_log_idx = 0
+
+first_write = True
+
+
+# Define browser options to be used
+
+options = Options()
+
+# 'eager' makes the webdriver perform an action as soon as it detects the trigger element istead of waiting for the entire page to load.
+# In this context, LOCALS takes a long time to load and Panoptes times out. This makes it more robust and run faster.
+
+options.page_load_strategy = 'eager'
+
+browser = uc.Chrome(options=options)
+
+
+#---------------------------------------------------------------------------------------------------
+
+#Function Definitions
+
+#---------------------------------------------------------------------------------------------------
+    
+#Login to the main landing page
+
+
+def login(url, user_login, user_password):
+    
+    # Call login URL and open page
+    try: 
+        browser.get(url)
+        #Maximise window is desired
+        browser.maximize_window()
+        
+    except StaleElementReferenceException:
+        
+        print('Stale Element. Could not open webpage')
+        
+        time.sleep(delay_page_load)
+        
+        print('Re-opening web page')
+        
+        #Try again. This error clears up if I just run the code again immediately. This is just to stop the code from crashing.
+        browser.get(url)
+    
+    #De-bug check
+    print('Web page loaded. Waiting to pass security check')
+    
+    #Need to pass connection security check
+    time.sleep(delay_security_check)
+    
+   
+    # Find the elements with the ID's for username and password1
+    # Use 'Inspect Element' to get the right HTML tags/ID's
+    username = browser.find_element(By.ID, username_element_ID)
+    password = browser.find_element(By.ID, password_element_ID)
+    
+    # Enter the user data in the field elements found above
+    username.send_keys(user_login)
+    password.send_keys(user_password)
+    
+    #De-bug check
+    print('Passed security check')
+   
+    # Try to click the login button
+    try:
+        
+        # Look for the action button by the name in 'Inspect Element' and click
+        browser.find_element(By.NAME, login_button_ID).click()
+        # De-bug delay to confirm page load
+        # time.sleep(delay_page_load)
+        
+    # if it doesn't work, wait and try again
+    except:
+        
+        #De-bug check
+        print('Could not find login button')
+        
+        time.sleep(delay_page_load)
+        
+          
+        # Look for the action button by the name in 'Inspect Element' and click
+        browser.find_element(By.NAME, login_button_ID).click()
+        
+        #De-bug check
+        print('Found login button on the second try')
+    
+
+#---------------------------------------------------------------------------------------------------
+
+
+def open_live_chat():
+    
+    
+    # Find the post with the LIVE CHAT
+    try:
+        
+        # Delay until LIVE CHAT button is clickable
+        time.sleep(delay_page_load*2)
+        
+        #De-bug for loop testing
+        #print('I am now trying to find the post element to click on')
+          
+        # Find the LIVE CHAT button element to click
+        live_chat_button_element = browser.find_element(By.XPATH, XPATH_for_live_chat_button_element)
+        
+        #De-bug check
+        print('Found the post with the live chat')
+        
+           
+                                     
+    except NoSuchElementException: #If you could not find any elements of posts, then the location has changed, or the page did not load
+        
+        print('The location method for the post has changed or the page was not loaded')
+        
+        try:
+        
+            
+            # Delay until LIVE CHAT button is clickable
+            time.sleep(delay_retry_action)
+        
+            #De-bug for loop testing
+            #print('I am now trying to find the post element to click on')
+          
+            # Find the LIVE CHAT button element to click
+            live_chat_button_element = browser.find_element(By.XPATH, XPATH_for_live_chat_button_element)
+        
+                
+        except NoSuchElementException:
+    
+            print('The name of the class of the LIVE CHAT post button has changed')
+            
+            print('This is the first attempt')
+            
+            
+            try:
+                
+                
+                # Delay until LIVE CHAT button is clickable
+                time.sleep(delay_retry_action*2)
+        
+                #De-bug for loop testing
+                #print('I am now trying to find the post element to click on')
+          
+                # Find the LIVE CHAT button element to click
+                live_chat_button_element = browser.find_element(By.XPATH, XPATH_for_live_chat_button_element)
+                
+                
+            except NoSuchElementException:
+                
+                print('The name of the class of the LIVE CHAT post button has changed')
+            
+                print('This is the second failed attempt')
+            
+                browser.quit()
+    
+    
+    # Try clicking on the element that was extracted above
+    live_chat_button_element.click()
+      
+    #De-bug check
+    print('Clicked the post to open the live chat post')
+    
+    
+    #Extract the post element for the current live chat post that was opened that contains post ID and title
+    current_locals_post_element = browser.find_element(By.XPATH, XPATH_for_element_with_live_chat)
+    
+    current_locals_post_ID = current_locals_post_element.get_attribute(live_chat_post_ID_attribute)
+    
+    #De-bug for the post ID and to see if correct post was opened. Can compare to the Element Inspector value on the LOCALS post
+    print('the post id for the LIVE chat post that we opened is ', current_locals_post_ID)
+    
+    #Find parent element that contains teh title of the post, then get the HTML in the class 'title' which is post name text
+    post_name = current_locals_post_element.find_element(By.CLASS_NAME, post_name_class).get_attribute('innerHTML')
+    post_name = post_name.strip()
+    
+    #De-bug output check
+    print(post_name)
+    
+    
+    
+    return(post_name, current_locals_post_ID)
+        
+    
+    
+    
+#---------------------------------------------------------------------------------------------------
+
+
+def get_live_chat_elements():
+    
+    #Give teh page some time to load before grabbing the data
+    time.sleep(delay_page_load*1.5)
+    
+    print('tried to get chat history')
+    
+    # Try to grab all the elements from chat. If this fails, then the chat has not loaded yet.
+    try:
+        
+        chat_history = browser.find_element(By.ID, live_chat_post_history_element).get_attribute('innerHTML')
+     
+              
+        #De-bug for loop testing
+        print('I grabbed the elements the first time')
+            
+        #Loop to add all values to array
+        
+            
+        #If we do not pull any elements, it means that chat was not loaded yet
+        if len(chat_history) == 0:
+            
+            print('trying again to get hist0ry')
+            #Delay to wait for chat to load and re-grab the element data
+            time.sleep(delay_retry_action)
+            
+            
+            chat_history = browser.find_element(By.ID, live_chat_post_history_element).get_attribute('innerHTML')     
+           
+            #De-bug Loop testing
+            #print("I failed to get the element the first time!")
+           
+                
+    except NoSuchElementException: 
+    #If no elements are found, then the name of the elements have changed or there was a time-out error. Try adjusting delays.
+        
+        print('The name of the chat element for grabbing the chat history element for parsing has changed or the page did not fully load.')
+        
+        print('This is the first attempt')
+    
+        
+        try:
+        
+            chat_history = browser.find_element(By.ID, live_chat_post_history_element).get_attribute('innerHTML')
+        
+            #print('tried to get chat history')
+     
+              
+            #De-bug for loop testing
+            #print('I grabbed the elements the first time')
+            
+            #Loop to add all values to array
+        
+            
+            #If we do not pull any elements, it means that chat was not loaded yet
+            if len(chat_history) == 0:
+            
+                #print('trying agin to get hist0ry')
+                #Delay to wait for chat to load and re-grab the element data
+                time.sleep(delay_retry_action)
+            
+            
+                chat_history = browser.find_element(By.ID, live_chat_post_history_element).get_attribute('innerHTML')     
+           
+                #De-bug Loop testing
+                #print("I failed to get the element the first time!")
+           
+           
+        except NoSuchElementException: 
+            
+            print('The name of the chat element for grabbing the chat history element for parsing has changed or the page did not fully load.')
+        
+            print('This is the second failed attempt')
+        
+            browser.quit()
+    
+    #print('I got chat history')
+    #Get the soup of the chat history tag and all HTML children and parse with fastest parser 'lxml'
+    soup = BeautifulSoup(chat_history, 'lxml')
+    
+    #Print the soup in pretty format as a check to see what we are getting. 
+    #The console cannot display it all, FYI
+    #print(soup.prettify())
+    
+    return(soup)
+    
+
+
+#---------------------------------------------------------------------------------------------------
+
+
+def get_message_uuids(soup):
+
+    # Get unique message IDs
+    
+    pull_message_ID = soup.find_all('div' , { message_uuid_attribute : True })
+
+     
+    message_ID_array = []
+    
+    # De-bug check to be sure it is wiping between loops
+    #print ('The message ID array is : ', len(message_ID_array), ' long')
+    
+    for element in pull_message_ID:
+        
+        message_ID_array.append(element[message_uuid_attribute])
+    
+    # De-bug Check that all IDs are extracted
+    #print('These are the message IDs' , message_ID_array)
+    
+    #Pull top message unique ID for later comparison to avoid scraping duplication
+    current_top_message_ID = message_ID_array[0]
+    
+    #De-bug the top message UUID output
+    #print('this is current top message ID ' , current_top_message_ID)
+    
+    return(current_top_message_ID, message_ID_array)
+  
+    
+    
+#---------------------------------------------------------------------------------------------------
+
+
+def get_user_uuids(soup):
+
+    # Get unique message IDs
+    
+    pull_user_ID = soup.find_all('div' , { user_uuid_attribute : True })
+    
+    #Wipe the array between loops
+    user_ID_array = []
+    
+    # De-bug check to be sure it is wiping between loops
+    #print ('The user ID array is : ', len(user_ID_array), ' long')
+    
+    for element in pull_user_ID:
+        
+        user_ID_array.append(element[user_uuid_attribute])
+    
+    # De-bug Check that all IDs are extracted
+    #print('These are the user IDs' , message_ID_array)
+    
+
+    return(user_ID_array)
+  
+    
+#---------------------------------------------------------------------------------------------------
+
+
+def go_to_homepage():
+    
+    
+    #Click out and re-load the chat.
+    
+    #back_to_home_element = browser.find_element(By.CLASS_NAME, 'logo-img')
+    
+    #back_to_home_element = browser.find_element(By.CLASS_NAME, 'homebuttom')
+
+    #back_to_home_element.click()
+    
+    browser.back()
+    
+    
+    #Start clock for execution time of loop
+    current_date_and_time = datetime.now()
+    
+    #print(current_date_and_time)
+
+    return(current_date_and_time)
+
+
+#---------------------------------------------------------------------------------------------------
+
+
+def get_usernames():
+    
+    
+    # Get usernames
+    
+    pull_username = soup.find_all('div' , { message_username_attribute : True })
+    
+    username_array = []
+    
+    for element in pull_username:
+        
+        username_array.append(element[message_username_attribute])
+        
+    
+    # De-bug Check that all IDs are extracted
+    #print('These are the usernames' , username_array)
+    
+    #Pull top username for later comparison to avoid scraping duplication
+    top_username = username_array[0]
+
+# print('this is top username ' , top_username)
+
+    return(username_array, top_username)
+
+
+
+#---------------------------------------------------------------------------------------------------
+
+def get_message_texts():
+
+    # Grab the messages texts
+    
+    pull_message = soup.find_all('span' , attrs = { 'class' : lambda partial_class: partial_class.endswith(message_text_attribute) })
+    
+    message_text_array = []
+    
+     
+    for element in pull_message:
+        
+        #This is cleaner output, but it drops emoji
+        #message_text_array.append(element.text)
+        
+        message_text_array.append(element)
+       
+    
+    # De-bug Check that all messages' text are extracted
+    #print ('These are the message texts ' , message_text_array)
+    
+    
+    #Pull top message text as a check
+    #top_message_text = message_text_array[0]
+    
+    
+    #print('this is top message text ' , top_message_text)
+   
+    
+    return(message_text_array)
+
+
+
+
+#---------------------------------------------------------------------------------------------------
+
+def get_reply_usernames():
+    
+    # Get all messages
+    pull_messages = soup.find_all('div' , attrs ={ 'class' : 'pmessage__content' })
+    
+    reply_username_array = []
+    
+    for element in pull_messages:
+        
+        #If there is a reply with a reply username...
+        if element.find('div', attrs = {'class' : lambda partial_class: partial_class.endswith('replyto') }):
+           
+            #DE-BUG
+            #print('found reply')
+            
+            #Find the div element with the reply username in it
+            reply_username = element.find('div', attrs = {'class' : lambda partial_class: partial_class.endswith('__replyto')})
+            
+            #Find the first span object in the div element containing the reply username and return that
+            reply_username_array.append(reply_username.find('span'))
+
+    
+        else:
+            
+            reply_username_array.append('NO_REPLY')
+            #DE-BUG
+            #print('no reply found')
+
+    # De-bug Check that all USERNAMES are extracted
+    #print('These are the usernames' , reply_username_array)
+    
+    
+    return(reply_username_array)
+
+
+#---------------------------------------------------------------------------------------------------
+
+def get_message_reply_texts():
+
+    # Grab the messages reply texts
+    
+    pull_reply_message = soup.find_all('div' , attrs = { 'class' : lambda partial_class: partial_class.startswith(message_reply_partial_attribue) })
+    
+    reply_message_text_array = []
+    
+    #De-bug check
+    #print( 'this is num of pulled messages ', len(pull_reply_message))
+    
+     
+    for element in pull_reply_message:
+        
+        #If there is a reply text in the message
+        if element.find('span', attrs = {'class' : lambda partial_class: partial_class.endswith(message_reply_text_partial_attribute) }):
+
+        
+            reply_message_text_array.append(element.find('span', attrs = {'class' : lambda partial_class: partial_class.endswith(message_reply_text_partial_attribute)} ))
+            
+            
+            #De-bug check
+            #print('append reply')
+            
+        #Otherwise, put in a filler value    
+        else:
+            
+            reply_message_text_array.append('NO_REPLY')
+            
+            #De-bug check
+            #print('append NONE empty reply')
+            
+            #print(reply_message_text_array)
+       
+    
+    # De-bug Check that all messages' text are extracted
+    #print ('These are the reply message texts ' , reply_message_text_array)
+    #print ( len(reply_message_text_array))
+
+    
+    return(reply_message_text_array)
+
+
+
+#---------------------------------------------------------------------------------------------------
+
+
+
+def get_attachment_urls():
+    
+    #Get attachment URLs 
+  
+
+    # Array to hold the elements with attachments and the URLs of those attachments  
+    attachment_url_array = []
+    attachment_element_array = []
+    
+    #Grab all elements with the tag for attachments. Some will be replied-to images that need to be excluded.
+    pull_attachments = soup.find_all('div' , attrs = {'class' : lambda has_attachment : has_attachment.startswith(message_attachment_partial_attribute)})
+    
+    
+    #De-bug check to be sure the filtering is working
+    # print ('there are ' , len(pull_attachments), ' attachment tags , but some are in replies')
+    #
+    # print ('there are ' , len(message_text_array), ' messages in reality')
+    
+    # print ('----------------------------------------------------------------')
+    
+    # Step through the list and only pull those elements with sibling tags that are NOT in a replied-to image attachment structure
+    for element in pull_attachments:
+        
+        if element.find_previous_sibling('span', class_ = sibling_attribute_for_reply_message_attachments) or element.find_previous_sibling('p', class_ = sibling_attribute_for_non_reply_message_attachments):
+            
+            attachment_element_array.append(element)
+            
+      
+    # #De-bug check to be sure the filtering out of images in replies is working
+    # print('number of actual attachment: ' , len(reply_element_attachment_array))
+    #
+    # print('This is what is coming out to be parsed')
+    #
+    # print(reply_element_attachment_array)
+    #
+    # print('----------------------------------------------------------')
+  
+    
+    for element in attachment_element_array:
+        
+        temp_attachment_url_array = []
+        
+        # #De-bug on loop logic inputs check to be sure the filtering is working
+        
+        # print('00000000000000000000000000000000000000000000000000000000')
+        #
+        # print('This is the element being evaluated')
+        #
+        # print(element)
+        #
+        # print('00000000000000000000000000000000000000000000000000000000')
+    
+        # If there was an attachment image found...
+        if element.find_all('img'):
+            
+            # # De-bug to see if there was an attachment image found
+            # print('This is the result of IMG search for find all. Should be a list')
+            #
+            # print(element.find_all('img'))
+            #
+            # print('********************************************************')
+                       
+            #Declare the temp array to store multipl image URLs in the same post until they are added to a list of lists
+            #As part of the for loop, this also wipes the temp array each time before moving on to the next post for processing
+            temp_attachment_url_array = []
+          
+            # For each element image found...
+            for url in element:
+                
+                # # De-bug chekc to see what is headed into the if loop to check logic
+                # print('This is the element url going into the conditional')
+                
+                # print(url)
+                
+    
+                # Typical URLs are between 288 and 296 characters. Limit of 5 is to exclude newline characters from this loop
+                if len(str(url)) > 5:
+                    
+                    # # De-bug check to see what got into the loop and the length value 
+                    # print(url)
+                    #
+                    # print(len(str(url)))
+                    
+                    #Add url text to temp array
+                    temp_attachment_url_array.append(url.img.get('src'))
+                    
+                    # # De-bug loop execution check output
+                    # print('Got image(s)!')
+                    #
+                    # print('----------------------------------------------------------')
+                    
+                
+        else: # If there are no images...
+            
+            # Add placeholder text for posts with no images
+            attachment_url_array.append('NO_ATTACHMENT')
+            
+            # # De-bug loop execution check output
+            # print ('No image(s)!')
+            
+            # print('----------------------------------------------------------')
+        
+        # #De-bug output check on the length of the attachment URL array to see if it matches the number of posts
+        # print(len(temp_attachment_url_array))
+    
+        # If there is something in the temp attachment array...
+        # This filters out the empty arrays left when there are no attachments to a message
+        if len(temp_attachment_url_array) > 0:
+        
+            attachment_url_array.append(temp_attachment_url_array)
+            
+            # # De-bug conditional execution check output
+            # print ('Added temp_url to full url array')
+    
+    
+    
+    # De-bug check content
+    #print('This is the attachment array')
+    #print (attachment_url_array)
+    
+    # De-bug check length    
+    #print( len(attachment_url_array))
+
+    
+    return(attachment_url_array)
+
+
+#---------------------------------------------------------------------------------------------------
+
+
+
+def get_reply_attachment_urls():
+    
+    #Get attachment URLs 
+  
+
+    # Array to hold the elements with attachments and the URLs of those attachments  
+    reply_attachment_url_array = []
+    reply_attachment_element_array = []
+    first_attachment_array = []
+    
+    #Grab all message elements
+    pull_messages = soup.find_all('div' , attrs = {'class' : lambda has_attachment : has_attachment.startswith(message_reply_attachment_partial_attribute)})
+    
+    # Step through the list and only pull the FIRST attachment elements for evaluation if it is a reply image or not
+    for element in pull_messages:
+                     
+        first_attachment = element.find('div' , attrs = {'class' : lambda has_attachment : has_attachment.startswith(message_attachment_partial_attribute)})
+        
+        first_attachment_array.append(first_attachment)
+        
+        
+    #print('there are: ', len(first_attachment_array), ' number of attachments to refine down')
+    
+    # Step through the list and only pull those elements with replied-to image attachments
+    for element in first_attachment_array:
+        
+        # If the element with  attachment is actually IN reply...
+        if element.find_parent('div', attrs = {'class' : lambda has_reply_attachment : has_reply_attachment.endswith(messaage_attachment_in_reply_partial_attribute)}):
+            
+            reply_attachment_element_array.append(element)
+            
+            #print('I grabbed a reply image')
+              
+        else:
+            
+            reply_attachment_element_array.append('NONE_FILLER')
+            
+            #print ('There is no replied-to image')
+            
+            
+            
+    #print(' the lenght of repy attachment array shoud match the lenght of messages arary and reply attachment array is: ' , len(reply_attachment_element_array))
+    
+    
+    for element in reply_attachment_element_array:
+        
+        #Declare the temp array to store multipl image URLs in the same post until they are added to a list of lists
+        #As part of the for loop, this also wipes the temp array each time before moving on to the next post for processing
+        temp_attachment_url_array = []
+        
+        
+        if isinstance(element, str):
+            
+            # Add placeholder text for posts with no reply images
+            temp_attachment_url_array.append('NO_REPLY_ATTACHMENT')
+    
+        # If there was an attachment image found...
+        else:
+            
+            # # De-bug to see if there was an attachment image found
+            # print('This is the result of IMG search for find all. Should be a list')
+            #
+            # print(element.find_all('img'))
+            #
+            # print('********************************************************')
+          
+            # For each element image found...
+            for url in element:
+                
+                # # De-bug chekc to see what is headed into the if loop to check logic
+                # print('This is the element url going into the conditional')
+                
+                # print(url)
+                
+    
+                # Typical URLs are between 288 and 296 characters. Limit of 5 is to exclude newline characters from this loop
+                if len(str(url)) > 5:
+                    
+                    # # De-bug check to see what got into the loop and the length value 
+                    # print(url)
+                    #
+                    # print(len(str(url)))
+                    
+                    #Add url text to temp array
+                    temp_attachment_url_array.append(url.img.get('src'))
+                    
+                    # # De-bug loop execution check output
+                    # print('Got image(s)!')
+                    #
+                    # print('----------------------------------------------------------')
+                    
+                
+        if len(temp_attachment_url_array) > 0:
+        
+            reply_attachment_url_array.append(temp_attachment_url_array)
+            
+            
+    #print( ' len of reply attachment array is: ' , len(reply_attachment_url_array))
+    
+    #print(reply_attachment_url_array)
+
+            
+            
+    return(reply_attachment_url_array)
+
+
+#---------------------------------------------------------------------------------------------------
+
+
+def write_data_to_file(message_ID_array, last_message_ID_array, username_array, message_text_array, reply_username_array, reply_message_text_array, attachment_url_array, reply_attachment_url_array, start_excel_idx, first_write, end_excel_idx, current_locals_post_ID, last_locals_post_ID, current_date_and_time, user_ID_array):
+    
+    # Export data to EXCEL file
+   
+   
+    # Array to synchronise all data into a list of lists' psuedo-structure for export.
+    output_array = []
+       
+    #print('clear the output array!')
+    
+    #print( 'output array has this in it: ', output_array)
+    
+    overlap_start_idx = 0
+    
+    # print ('this is the message ID array ' , message_ID_array)
+    #
+    # print ('this is the username array ' , username_array)
+    #
+    # print ('this is the message text array ' , message_text_array)
+    #
+    # print ('this is the attachment url array ' , attachment_url_array)
+    #
+    # print ('this is the user UUID array ' , user_ID_array)
+    
+    #print ('this is the last message ID array ' , last_message_ID_array)
+    
+    #print ('    length of the last message ID array is ' , len(last_message_ID_array))
+    
+    #Find the index where the data overlaps to identify duplicates
+    for element in message_ID_array:
+        
+        # print('ID to compare against ' , last_message_ID_array[(len(last_message_ID_array)) -1 ],  ' is: ', element)
+        
+        # If the message ID matches the first ID from the last batch...
+        if element == last_message_ID_array[len(last_message_ID_array) - 1]:
+            
+            #print('found the overlap')
+            
+            #Stop lookign for where the overlap starts
+            break
+            
+        else:
+            
+            #Add one and keep looking
+            overlap_start_idx = overlap_start_idx + 1
+            
+                       
+            
+  
+    #print ('the overlap start index is: ', overlap_start_idx)
+    
+    #print ('the lrnght of mesage ID array is ' , len(message_ID_array))
+    
+    
+    time_stamp_array = []
+    
+
+    for element in message_ID_array:
+            
+            time_stamp_array.append(current_date_and_time)
+     
+    
+    if overlap_start_idx == len(message_ID_array):
+        
+        i = 0
+        
+             
+        
+        while i < len(message_ID_array) -1 :
+    
+            output_array.append( [ (username_array[i]), (message_text_array[i]), (attachment_url_array[i]), (reply_username_array[i]), (reply_message_text_array[i]), (reply_attachment_url_array[i]),(message_ID_array[i]), (time_stamp_array[i]), (user_ID_array[i]) ] )
+            
+    
+            i = i + 1    
+            
+            
+        #print('This is the first go-around and should NOT trigger again')  
+            
+    # Starting at the front of the dataset, only grab as many elements as are equal to the number of unique messages
+    while overlap_start_idx < len(message_ID_array) - 1:
+        
+            
+        time_stamp_array.append(current_date_and_time)
+         
+        output_array.append( [ (username_array[overlap_start_idx]), (message_text_array[overlap_start_idx]), (attachment_url_array[overlap_start_idx]), (reply_username_array[overlap_start_idx]), (reply_message_text_array[overlap_start_idx]), (reply_attachment_url_array[overlap_start_idx]), (message_ID_array[overlap_start_idx]), (time_stamp_array[overlap_start_idx]), (user_ID_array[overlap_start_idx]) ] )
+        
+        #Increment the index for both the extraftion and the conditional
+        
+        overlap_start_idx = overlap_start_idx + 1
+        
+    
+        
+    #Check the output data
+    #print('Thi sis the output array to be writien:')
+    #print(output_array)
+    
+    #print('made it past the extraction of unique messages')
+     
+    # Find out how many unique messages were added
+    num_message_to_add = len(output_array)
+    
+    #print('adding ', num_message_to_add, ' messages to excel!')
+    
+    #print ( 'this is the output being added ', output_array)
+
+      
+    #The last row number to put in the EXCEL is equal to what you started with plus the number added
+    end_excel_idx = start_excel_idx + num_message_to_add -1
+    
+    #print ('the start excel index is: ', start_excel_idx)
+  
+    
+    #print ('the end excel index is: ', end_excel_idx)
+    
+        
+   
+    #Write out the data as a panda dataframe with data, rows, and column names, repspecitvely.
+    data_to_excel = pd.DataFrame(output_array)
+    
+    #print ('this is the data frame: ' )
+    
+    #print (data_to_excel)
+
+
+    # If this data came from a new chat...
+    if current_locals_post_ID != last_locals_post_ID:
+        
+        
+        first_write = True
+    
+        print('we aint in the same chat!')  
+        
+        prefix = str( log_start_time + '_LOCALS_Chat_Archive_')
+        
+        chat_post_name_orig = str(post_name)
+        
+        chat_post_name_mid1 = chat_post_name_orig.replace('/', '-')
+        
+        chat_post_name_mid2 = chat_post_name_mid1.replace("?", '-')
+        
+        chat_post_name = chat_post_name_mid2.replace(':', '-')
+        
+        extension = '.xlsx'
+        
+        file_name = str(prefix + chat_post_name + extension)
+    
+
+        start_excel_idx = 0
+        
+        end_excel_idx = 0
+        
+        #De-bug check
+        #print ( ' First write is: ' , first_write)
+        
+        if first_write == False:
+        
+            with pd.ExcelWriter(file_name, mode="a", if_sheet_exists="overlay") as writer:
+                
+                data_to_excel.to_excel(writer, sheet_name = 'Chat Log', startrow = start_excel_idx, header = False, index = False)
+        
+        
+        if first_write == True:
+        
+            with pd.ExcelWriter(file_name, mode='w') as writer:
+                
+                data_to_excel.to_excel(writer, sheet_name = 'Chat Log' , header = False, index = False)
+                            
+                #print('this is only for opening the file and SHOULD NOT trigger more than once')
+                
+                
+        first_write = False
+        
+
+        # # Data output success confirmation
+        # print ('printed to file')
+        
+        
+        
+        
+    else: 
+        
+        print('we are in the same chat')
+        
+        prefix = str( log_start_time + '_LOCALS_Chat_Archive_')
+        
+        chat_post_name_orig = str(post_name)
+        
+        chat_post_name_mid1 = chat_post_name_orig.replace('/', '-')
+        
+        chat_post_name_mid2 = chat_post_name_mid1.replace("?", '-')
+        
+        chat_post_name = chat_post_name_mid2.replace(':', '-')
+        
+        extension = '.xlsx'
+        
+        file_name = str(prefix + chat_post_name + extension)
+   
+        
+        #print ( ' First write is: ' , first_write)
+        
+        if first_write == False:
+        
+            with pd.ExcelWriter(file_name, mode="a", if_sheet_exists="overlay") as writer:
+                
+                data_to_excel.to_excel(writer, sheet_name = 'Chat Log', startrow = start_excel_idx, header = False, index = False)
+        
+        
+        if first_write == True:
+        
+            with pd.ExcelWriter(file_name, mode='w') as writer:
+                
+                data_to_excel.to_excel(writer, sheet_name = 'Chat Log' , header = False, index = False)
+                            
+                #print('this is only for opening the file and SHOULD NOT trigger more than once')
+                
+                
+        first_write = False
+        
+                  
+    # # Data output success confirmation
+    #print ('printed to file')
+    
+  
+    # Copy message IDs for comparison next loop
+    last_message_ID_array = message_ID_array
+    
+    
+    # We have to start the next loop where we left off, but we add this after we grab the start for the current loop
+    start_excel_idx = start_excel_idx + num_message_to_add
+    
+    print ('The number of messages grabbed is: ', (start_excel_idx) )
+    
+   
+    return(last_message_ID_array, start_excel_idx, end_excel_idx, first_write)
+    
+#---------------------------------------------------------------------------------------------------
+
+
+def get_batch_stats(message_ID_array, username_array, message_text_array, attachment_url_array):
+    
+    #Data batch corruption check and flags
+    
+    #De-bug testing 
+    #print('I moved on to data corruption checks!')
+    
+    if len(message_ID_array) != len(username_array) or len(username_array) != len(message_text_array) or len(message_text_array) != len(message_ID_array):
+    
+        print('ERROR: Numerical mis-match between the numbers of message attributes.')
+        
+        print ('number of ids = ' , len(message_ID_array))
+        
+        print ('number of usernames = ' , len(username_array))
+        
+        print ('number of message texts = ' , len(message_text_array))
+        
+    #De-bug check that no corruotion was observed
+    #return( print('All data is intact'))
+
+
+#---------------------------------------------------------------------------------------------------
+
+
+def is_chat_alive(current_locals_post_ID, last_locals_post_ID):
+    
+    if current_locals_post_ID == last_locals_post_ID:
+        
+        return (True)
+    
+    
+    else:
+    
+        return(False)
+    
+
+#---------------------------------------------------------------------------------------------------
+
+# ***********************************************************************************************************************************************************************************
+
+
+# DEPRECATED CODE. LOCALS CHAT COUTN USER DOES NTO ALWAYS WORK. THIS WAS CRASHING THE CODE, SO I DEPRECATED. THE CODE TO CALL IT IS STILL IN THE MAIN PROJECT LOOP, BUT COMMENTED OUT.
+
+
+# ***********************************************************************************************************************************************************************************
+
+def write_num_active_users(log_start_time, post_name, first_write, chat_user_count_log_idx):
+    
+    chat_population_array = []
+    
+    chat_count_timestamp = datetime.now()
+    
+    # get numebr of chat participants
+    num_users_in_chat = browser.find_element(By.XPATH, "/html/body/div[5]/div[1]/div/div/div[2]/div[2]/div[1]/div[1]/div[2]/div[3]/span[2]").get_attribute('innerHTML')
+
+    chat_population_array.append([(num_users_in_chat), (chat_count_timestamp)])
+        
+    chat_population_data = pd.DataFrame(chat_population_array)
+
+    
+    #dE-bUG CHECK             
+    #print('num users in chat is: ' , num_users_in_chat)
+
+    print('Census data logged')  
+        
+    prefix = str( log_start_time + '_LOCALS_Active_User_Time_Log_')
+    
+    chat_post_name_orig = str(post_name)
+        
+    chat_post_name = chat_post_name_orig.replace('/', '-')
+            
+    extension = '.xlsx'
+    
+    file_name = str(prefix + chat_post_name + extension)
+    
+    
+        #De-bug check
+        #print ( ' First write is: ' , first_write)
+        
+    if first_write == False:
+        
+        with pd.ExcelWriter(file_name, mode="a", if_sheet_exists="overlay") as writer:
+                
+            chat_population_data.to_excel(writer, sheet_name = 'Activity', startrow = chat_user_count_log_idx, header = False, index = False)
+        
+        
+    if first_write == True:
+        
+        with pd.ExcelWriter(file_name, mode='w') as writer:
+                
+            chat_population_data.to_excel(writer, sheet_name = 'Activity' , header = False, index = False)
+                            
+        #print('this is only for opening the file and SHOULD NOT trigger more than once')
+                
+    
+
+    chat_user_count_log_idx = chat_user_count_log_idx + 1
+    
+ 
+    
+    return(chat_user_count_log_idx)
+
+
+# ***********************************************************************************************************************************************************************************
+
+
+# DEPRECATED CODE. LOCALS CHAT COUTN USER DOES NTO ALWAYS WORK. THIS WAS CRASHING THE CODE, SO I DEPRECATED. THE CODE TO CALL IT IS STILL IN THE MAIN PROJECT LOOP, BUT COMMENTED OUT.
+
+
+# ***********************************************************************************************************************************************************************************
+
+    
+    
+#---------------------------------------------------------------------------------------------------
+
+# Main Program Loop
+
+#---------------------------------------------------------------------------------------------------
+
+
+# Call the login function and log in to the LOCALS homepage
+login(url, user_login, user_password)
+
+ 
+#Start clock for execution time of loop
+current_date_and_time = datetime.now()
+#Record Log start for file naming
+log_start_time = datetime.now().strftime('[%Y-%m-%d]-%H.%M.%S')
+
+#print(current_date_and_time)
+
+# Call function to grab the current live chat post and grab all the info about it
+[post_name , current_locals_post_ID]= open_live_chat()
+
+# Begin Data Scrape
+
+# Delay for chat to load
+time.sleep(delay_page_load*2)
+
+#Initialise the first loop with a TRUE value. This will be changed in the is_chat_alive fucntion
+chat_is_alive = True
+
+print('I am here')
+
+while chat_is_alive == True:
+    
+    #Loop de-bug check
+    #print ('I made it through to the top of the loop')
+    
+    #Reset the extraction loop execution time clock
+    current_date_and_time = datetime.now()
+
+    # Grab the live chat and get the HTML soup to parse
+    soup = get_live_chat_elements()
+    
+    
+    # Update the post ID and top message ID after ensuring the current batch of data is unique to make sure we scan for duplicates later
+    last_locals_post_ID = browser.find_element(By.XPATH, XPATH_for_element_with_live_chat).get_attribute(live_chat_post_ID_attribute)
+    
+    last_top_message_ID = message_ID_array[0]
+         
+    # Grab the message IDs from the chat and the top message ID for is_chat_alive testing
+    [current_top_message_ID, message_ID_array] = get_message_uuids(soup)
+        
+    #print(' current top message ID is: ' , current_top_message_ID)
+    
+    #print(' last top message ID is: ' , last_top_message_ID)
+    
+    start_time_stagnant_chat = time.time()
+    
+    # As long as there is no unique data to be read
+    while current_top_message_ID == last_top_message_ID:
+        
+        #De-bug for loop to flag that message ID is not updating
+        print ('No new messages')
+        
+        latest_time_stagnant_chat = time.time()
+        
+        stagnation_time = latest_time_stagnant_chat - start_time_stagnant_chat
+        
+        print('This is stagnation time: ' , stagnation_time)
+        
+        # Restart the cycle clock
+        current_date_and_time = datetime.now()
+        
+        # Update the live chat and get the HTML soup to parse
+        soup = get_live_chat_elements()
+        
+        # Update the message IDs and the top message ID to see if we can break out of the loop and there is unique data
+        [current_top_message_ID, message_ID_array] = get_message_uuids(soup)
+        
+        #time.sleep(1.5)
+        
+        #Write the active user count log file
+        #chat_user_count_log_idx = write_num_active_users(log_start_time, post_name, first_write, chat_user_count_log_idx)
+     
+        
+        if stagnation_time > 120:
+        
+            #Go back to the home page
+            current_date_and_time = go_to_homepage()
+        
+            # Re-call the function to grab the current live chat post and grab all the info about it
+            [post_name , current_locals_post_ID] = open_live_chat()
+                              
+            # Delay for chat to load
+            time.sleep(delay_page_load*2)
+            
+            # Update the live chat and get the HTML soup to parse
+            soup = get_live_chat_elements()
+        
+            # Update the message IDs and the top message ID to see if we can break out of the loop and there is unique data
+            [current_top_message_ID, message_ID_array] = get_message_uuids(soup)
+            
+            #Restart the stagantion clock for another period of waiting to see if the chat is alive
+            start_time_stagnant_chat = time.time()
+    
+    
+    # Get the username data and the top username message
+    
+    [username_array , top_username] = get_usernames()
+    
+    # Get the message text data
+    
+    message_text_array = get_message_texts()
+    
+    attachment_url_array = get_attachment_urls()
+    
+    reply_username_array = get_reply_usernames()
+    
+    reply_message_text_array = get_message_reply_texts()
+    
+    reply_attachment_url_array = get_reply_attachment_urls()
+    
+    user_ID_array = get_user_uuids(soup)
+    
+    #---------------------------------------------------------------------------------------------------
+    
+    
+    # De-bug check number of of message ID matches number of messages, and usernames for association
+    # print('The number of unique message IDs is ', len(message_ID_array))
+    # print('The number of unique messages is ', len(message_text_array))
+    #print('The number of user IDs attached to messages is' , len(username_array))
+    #print('The number of replies attached to messages is ' , len(reply_message_text_array))
+    # print('The numbers above should match.')
+    
+    
+    
+    # # Check if interested on number of images in the batch
+    #1
+    # attachment_count = 0
+    #
+    # for element in attachment_url_array:
+    #
+    #     if element != 'NONE':
+    #
+    #         attachment_count = attachment_count + 1
+    #
+    # print('The number of messages with attachments in this batch are' , attachment_count)
+    
+    
+    # Pull date and time of extraction for batch.
+    ending_date_and_time = datetime.now()
+    
+    #print(ending_date_and_time)
+    
+    
+    # Data dump for verification
+    # print('These are the message IDs extracted' , message_ID_array)
+    # print('These are the message user IDs' , username_array)
+    # print('These are the message texts extracts' , message_text_array)
+    # print('These are the attachment URLs' , attachment_url_array)
+    
+
+    #---------------------------------------------------------------------------------------------------
+    
+    #time.sleep(1.5)
+    #Write the active user count log file
+    #chat_user_count_log_idx = write_num_active_users(log_start_time, post_name, first_write, chat_user_count_log_idx)
+     
+  
+    #Write the data to the EXCEL file
+    [last_message_ID_array, start_excel_idx, end_excel_idx, first_write] = write_data_to_file(message_ID_array, last_message_ID_array, username_array, message_text_array, reply_username_array, reply_message_text_array, attachment_url_array, reply_attachment_url_array, start_excel_idx, first_write, end_excel_idx, current_locals_post_ID, last_locals_post_ID, current_date_and_time, user_ID_array)
+    
+    #print ('first write is: ' , first_write, ' back in main after clearing wrtie results!')
+    
+    #print('I made it past data write!')
+    # Get any stats desired for the data batch
+    get_batch_stats(message_ID_array, username_array, message_text_array, attachment_url_array)
+    
+    
+    # Compute loop extraction time
+    execution_time = ending_date_and_time - current_date_and_time
+    print('Execution time: ', (execution_time))
+
+   
+#---------------------------------------------------------------------------------------------------
+    
+    
+#END OF LOOP READY TO  LOAD MORE DATA
+    
+    
+#---------------------------------------------------------------------------------------------------
+
+# If we ever break out of the loop, provide a clean close to the session
+browser.quit()
+
+
+
+
+
+
+
+#---------------------------------------------------------------------------------------------------
+    
+    
+# Improvement notes and to-do list
+    
+    
+#---------------------------------------------------------------------------------------------------
+
+# # Bugs
+
+# # LOCALS PAID CHATS ADD A SECOND USERNAME ELEMENT THAT IS SCRAPED UP AND DUMPLICATED TO THE NEXT CHAT
+# # THIS CREATES AN 'OFF BY ONE' ERRO THAT OVERWRITES THE PAID CHATTER USERNAME ONTO THE NEXT MESSAGE IN THE LOG
+# # IF MESSAGE IS REPLIED TO, IT SHOWS THE CORRECT ORIGINAL POSTER NAME. IT ONLY AFFECTS A SINGLE BATCH OF RESULTS
+# # SINGLE BATCH IS ~ 25 MESSAGES, AND THAT IS THE LENGTH THE ERROR WILL PERSIST. IT CORRRECTS ONCE THE PAID CHAT DROPS
+# # OFF THE LOADED CHAT HISTORY.
+
+
+
+# # OCCASIONALLY, PANOPTES WILL CRASH ANS CHROME PROCESSES WILL NOT CLOSE. KILL IT IN TASK MANAGER BEFORE IT MELTS THE CPU
+
+
+
+# # NEED TO ADD AUTOMATIC CLEAN-UP THE HTML OUTPUT ARTEFACTS IN THE LOG OUTPUT
+
+
+# # THERE IS AN END CHAT MESSAGE WHEN THE CHAT EXPIRES. A FLAG COULD BE ADDED SO TAHT THE PROGRAMME BACKS OUT TO THE HOMEPAGE
+# # TO OPEN THE NEW ACTIVE CHAT WITHOUT WAITING FOR A TIME-OUT.
+
+
